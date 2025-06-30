@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Career Counselor</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <div id="chat-container" class="chat-box"></div>
+
+  <div class="input-area">
+    <input type="text" id="user-input" placeholder="Ask your career question...">
+    <button id="send-btn">Send</button>
+    <button id="mic-btn">🎤</button>
+  </div>
+
+  <div class="upload-area">
+    <label for="resume-upload" class="upload-btn">📄 Upload Resume</label>
+    <input type="file" id="resume-upload" accept=".pdf,.doc,.docx" hidden>
+    <button id="job-btn">🔍 Find Jobs</button>
+    <button id="score-btn">📊 Score Resume</button>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

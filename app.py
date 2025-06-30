@@ -1,105 +1,81 @@
 import os
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from dotenv import load_dotenv
 import google.generativeai as genai
 import requests
-
-from resume_parser import parse_resume  # Ensure resume_parser.py exists
+from resume_parser import parse_resume  # Make sure resume_parser.py exists
+from gtts import gTTS
 
 load_dotenv()
 
-app = Flask(__name__)
-
-# ✅ Gemini model config with correct full model path
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-model = genai.GenerativeModel(model_name="models/gemini-pro")
-
-# ✅ RapidAPI config
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
 RAPIDAPI_HOST = os.getenv("RAPIDAPI_HOST")
-
-# ✅ HuggingFace config
 HF_API_KEY = os.getenv("HF_API_KEY")
-HF_API_URL = "https://api-inference.huggingface.co/models/ehartford/writer"
 
+app = Flask(__name__)
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel("models/gemini-pro")
 
-@app.route('/')
+@app.route("/")
 def home():
-    return render_template('index.html')
+    return render_template("index.html")
 
-
-@app.route('/ask', methods=['POST'])
+@app.route("/ask", methods=["POST"])
 def ask():
-    data = request.get_json()
-    question = data.get('question') if data else None
-
-    if not question:
-        return jsonify({'response': 'Please enter a valid question.'})
-
     try:
+        question = request.json.get("question")
+        if not question:
+            return jsonify({"error": "Please enter a valid question"}), 400
+
         response = model.generate_content(question)
-        return jsonify({'response': response.text})
+        return jsonify({"response": response.text})
     except Exception as e:
-        return jsonify({'response': f"Error: {str(e)}"})
+        return jsonify({"error": str(e)}), 500
 
-
-@app.route('/job-suggestions', methods=['POST'])
-def job_suggestions():
+@app.route("/speak", methods=["POST"])
+def speak():
     data = request.get_json()
-    query = data.get('query') if data else None
+    text = data.get("text", "")
+    if not text:
+        return jsonify({"error": "No text provided"}), 400
 
+    tts = gTTS(text)
+    tts.save("static/voice.mp3")
+    return jsonify({"url": "/static/voice.mp3"})
+
+@app.route("/job_suggestions", methods=["POST"])
+def job_suggestions():
+    query = request.json.get("query")
     if not query:
-        return jsonify({'error': 'Empty query'})
+        return jsonify({"error": "No job query provided"}), 400
 
     url = "https://jsearch.p.rapidapi.com/search"
-    params = {"query": query, "num_pages": "1"}
     headers = {
         "X-RapidAPI-Key": RAPIDAPI_KEY,
         "X-RapidAPI-Host": RAPIDAPI_HOST
     }
+    params = {"query": query, "page": "1", "num_pages": "1"}
 
-    try:
-        response = requests.get(url, headers=headers, params=params)
+    response = requests.get(url, headers=headers, params=params)
+    if response.status_code == 200:
         jobs = response.json().get("data", [])
-        job_list = [
-            {
-                "title": job.get("job_title"),
-                "company": job.get("employer_name"),
-                "location": job.get("job_city"),
-                "url": job.get("job_apply_link")
-            }
-            for job in jobs
-        ]
-        return jsonify(job_list)
-    except Exception as e:
-        return jsonify({"error": str(e)})
+        return jsonify(jobs[:5])
+    else:
+        return jsonify({"error": "Failed to fetch job suggestions"}), 500
 
+@app.route("/resume_score", methods=["POST"])
+def resume_score():
+    if "resume" not in request.files:
+        return jsonify({"error": "No resume uploaded"}), 400
 
-@app.route('/score-resume', methods=['POST'])
-def score_resume():
-    file = request.files.get('resume')
-    if not file:
-        return jsonify({'error': 'No file uploaded'})
+    resume_file = request.files["resume"]
+    text = parse_resume(resume_file)
 
-    text = parse_resume(file)
-    if not text:
-        return jsonify({'error': 'Could not parse resume'})
+    prompt = f"Evaluate the following resume content and give a score out of 10:\n\n{text}"
+    response = model.generate_content(prompt)
 
-    headers = {
-        "Authorization": f"Bearer {HF_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "inputs": text
-    }
+    return jsonify({"score": response.text})
 
-    try:
-        response = requests.post(HF_API_URL, headers=headers, json=payload)
-        score = response.json()
-        return jsonify({'score': score})
-    except Exception as e:
-        return jsonify({'error': str(e)})
-
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000)
+if __name__ == "__main__":
+    app.run(debug=True, host="0.0.0.0", port=10000)

@@ -1,80 +1,80 @@
-import os
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, render_template, request, jsonify
 from dotenv import load_dotenv
+import os
 import google.generativeai as genai
 import requests
 from resume_parser import parse_resume
-from gtts import gTTS
 
-# Load environment variables
 load_dotenv()
 
-# API keys
+app = Flask(__name__)
+
+# Load environment variables
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
 RAPIDAPI_HOST = os.getenv("RAPIDAPI_HOST")
 HF_API_KEY = os.getenv("HF_API_KEY")
 
-# Configure Gemini
+# Configure Gemini API
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-pro")  # ✅ Correct model name
-
-app = Flask(__name__)
+model = genai.GenerativeModel("gemini-pro")
 
 @app.route("/")
-def home():
+def index():
     return render_template("index.html")
 
 @app.route("/ask", methods=["POST"])
 def ask():
+    question = request.form.get("question", "").strip()
+    if not question:
+        return jsonify({"response": "Please enter a valid question."})
+
     try:
-        question = request.json.get("question")
-        if not question:
-            return jsonify({"error": "Please enter a valid question"}), 400
         response = model.generate_content(question)
         return jsonify({"response": response.text})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/speak", methods=["POST"])
-def speak():
-    data = request.get_json()
-    text = data.get("text", "")
-    if not text:
-        return jsonify({"error": "No text provided"}), 400
-    tts = gTTS(text)
-    tts.save("static/voice.mp3")
-    return jsonify({"url": "/static/voice.mp3"})
+        return jsonify({"response": f"Error: {str(e)}"})
 
 @app.route("/job_suggestions", methods=["POST"])
 def job_suggestions():
-    query = request.json.get("query")
-    if not query:
-        return jsonify({"error": "No job query provided"}), 400
-
+    query = request.form.get("query", "")
     url = "https://jsearch.p.rapidapi.com/search"
     headers = {
         "X-RapidAPI-Key": RAPIDAPI_KEY,
         "X-RapidAPI-Host": RAPIDAPI_HOST
     }
     params = {"query": query, "page": "1", "num_pages": "1"}
+    try:
+        response = requests.get(url, headers=headers, params=params)
+        data = response.json()
+        jobs = data.get("data", [])[:5]
+        suggestions = [f"{job['job_title']} at {job['employer_name']}" for job in jobs]
+        return jsonify({"suggestions": suggestions})
+    except Exception as e:
+        return jsonify({"suggestions": [f"Error: {str(e)}"]})
 
-    response = requests.get(url, headers=headers, params=params)
-    if response.status_code == 200:
-        jobs = response.json().get("data", [])
-        return jsonify(jobs[:5])
-    else:
-        return jsonify({"error": "Failed to fetch job suggestions"}), 500
+@app.route("/score_resume", methods=["POST"])
+def score_resume():
+    file = request.files.get("resume")
+    if not file:
+        return jsonify({"score": "No resume uploaded."})
 
-@app.route("/resume_score", methods=["POST"])
-def resume_score():
-    if "resume" not in request.files:
-        return jsonify({"error": "No resume uploaded"}), 400
-    resume_file = request.files["resume"]
-    text = parse_resume(resume_file)
-    prompt = f"Evaluate the following resume content and give a score out of 10:\n\n{text}"
-    response = model.generate_content(prompt)
-    return jsonify({"score": response.text})
+    try:
+        resume_text = parse_resume(file)
+        headers = {
+            "Authorization": f"Bearer {HF_API_KEY"},
+            "Content-Type": "application/json"
+        }
+        payload = {"inputs": resume_text}
+        response = requests.post(
+            "https://api-inference.huggingface.co/models/SamLowe/roberta-base-go_emotions",
+            headers=headers,
+            json=payload
+        )
+        result = response.json()
+        return jsonify({"score": result})
+    except Exception as e:
+        return jsonify({"score": f"Error: {str(e)}"})
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=10000)
+    app.run(debug=True)

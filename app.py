@@ -31,7 +31,8 @@ def ask():
 
     try:
         response = model.generate_content(question)
-        return jsonify({"response": response.text})
+        reply = response.text if hasattr(response, "text") else "Sorry, I couldn't generate a response."
+        return jsonify({"response": reply})
     except Exception as e:
         return jsonify({"response": f"Error: {str(e)}"})
 
@@ -62,8 +63,7 @@ def score_resume():
     try:
         resume_text = parse_resume(file)
         headers = {
-            "Authorization": f"Bearer {HF_API_KEY"},
-            "Content-Type": "application/json"
+            "Authorization": f"Bearer {HF_API_KEY}"
         }
         payload = {"inputs": resume_text}
         response = requests.post(

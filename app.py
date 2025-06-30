@@ -1,97 +1,89 @@
 import os
 from flask import Flask, render_template, request, jsonify
-from werkzeug.utils import secure_filename
-from dotenv import load_dotenv
 import google.generativeai as genai
+from dotenv import load_dotenv
 import requests
-import pdfplumber
 
 load_dotenv()
 
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = 'uploads'
 
-# Configure Gemini model with correct model name
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-model = genai.GenerativeModel(model_name="models/gemini-1.5-flash")
+# API Keys from .env
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
+RAPIDAPI_HOST = os.getenv("RAPIDAPI_HOST")
+HF_API_KEY = os.getenv("HF_API_KEY")
 
-# Home Route
-@app.route('/')
+# Gemini AI setup
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel("gemini-pro")
+
+@app.route("/")
 def index():
-    return render_template('index.html')
+    return render_template("index.html")
 
-# Chat with Gemini
-@app.route('/ask', methods=['POST'])
+@app.route("/ask", methods=["POST"])
 def ask():
     data = request.get_json()
-    question = data.get('question', '')
-    if not question.strip():
-        return jsonify({'response': '⚠️ Please ask something...'})
+    question = data.get("message", "").strip()
+    if not question:
+        return jsonify({"message": "Please say something!"}), 400
+
     try:
         response = model.generate_content(question)
-        return jsonify({'response': response.text})
+        return jsonify({"message": response.text})
     except Exception as e:
-        return jsonify({'response': f'⚠️ Error: {str(e)}'})
+        return jsonify({"message": "AI error: " + str(e)}), 500
 
-# Resume Upload and Scoring
-@app.route('/upload', methods=['POST'])
-def upload_resume():
-    if 'resume' not in request.files:
-        return jsonify({'score': '⚠️ No file uploaded'})
+@app.route("/score_resume", methods=["POST"])
+def score_resume():
     file = request.files['resume']
-    if file.filename == '':
-        return jsonify({'score': '⚠️ Empty filename'})
-    filename = secure_filename(file.filename)
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-    file.save(filepath)
+    text = file.read().decode('utf-8')
 
-    try:
-        with pdfplumber.open(filepath) as pdf:
-            text = ''.join(page.extract_text() or '' for page in pdf.pages)
+    api_url = "https://api-inference.huggingface.co/models/mrm8488/bert-small-finetuned-age_news-classification"
+    headers = {"Authorization": f"Bearer {HF_API_KEY}"}
+    response = requests.post(api_url, headers=headers, data=text)
 
-        if not text.strip():
-            return jsonify({'score': '⚠️ Could not read resume text.'})
+    if response.status_code == 200:
+        result = response.json()
+        label = result[0][0]['label']
+        score = result[0][0]['score']
+        feedback = f"Resume classified as: {label}\nConfidence: {round(score * 100, 2)}%"
+    else:
+        feedback = "Error analyzing resume."
+        score = 0
 
-        prompt = f"Give a resume quality score out of 10 with reasoning: {text[:3000]}"
-        result = model.generate_content(prompt)
-        return jsonify({'score': result.text})
-    except Exception as e:
-        return jsonify({'score': f'⚠️ Error analyzing resume: {str(e)}'})
+    return jsonify({"score": round(score * 100, 2), "feedback": feedback})
 
-# Job Suggestions via RapidAPI
-@app.route('/jobs', methods=['POST'])
-def get_jobs():
+@app.route("/job_suggestions", methods=["POST"])
+def job_suggestions():
     data = request.get_json()
-    query = data.get('query', '')
+    query = data.get("query", "").strip()
+    if not query:
+        return jsonify({"jobs": []})
+
     url = "https://jsearch.p.rapidapi.com/search"
-    params = {
-        "query": query,
-        "page": "1",
-        "num_pages": "1"
-    }
+    params = {"query": query, "num_pages": "1"}
     headers = {
-        "X-RapidAPI-Key": os.getenv("RAPIDAPI_KEY"),
-        "X-RapidAPI-Host": os.getenv("RAPIDAPI_HOST")
+        "X-RapidAPI-Key": RAPIDAPI_KEY,
+        "X-RapidAPI-Host": RAPIDAPI_HOST
     }
 
     try:
         response = requests.get(url, headers=headers, params=params)
-        jobs = response.json().get("data", [])
-        if not jobs:
-            return jsonify({"jobs": ["❌ No jobs found for your query."]})
-
-        job_results = []
-        for job in jobs[:5]:
-            title = job.get("job_title", "N/A")
-            company = job.get("employer_name", "N/A")
-            location = job.get("job_city", "N/A")
-            link = job.get("job_apply_link", "#")
-            job_results.append(f"{title} at {company} ({location}) - [Apply Here]({link})")
-
-        return jsonify({"jobs": job_results})
+        jobs_data = response.json()
+        jobs = [
+            {
+                "title": job["job_title"],
+                "company": job["employer_name"],
+                "location": job["job_city"],
+                "url": job["job_apply_link"]
+            }
+            for job in jobs_data.get("data", [])[:5]
+        ]
+        return jsonify({"jobs": jobs})
     except Exception as e:
-        return jsonify({"jobs": [f"⚠️ Error fetching jobs: {str(e)}"]})
+        return jsonify({"jobs": [], "error": str(e)}), 500
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     app.run(debug=True)

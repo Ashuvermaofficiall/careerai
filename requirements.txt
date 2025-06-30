@@ -5,3 +5,4 @@ requests
 gTTS
 PyMuPDF
 python-docx
+PyPDF2

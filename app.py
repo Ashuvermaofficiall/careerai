@@ -4,21 +4,21 @@ from dotenv import load_dotenv
 import google.generativeai as genai
 import requests
 
-from resume_parser import parse_resume  # resume_parser.py must exist
+from resume_parser import parse_resume  # Ensure resume_parser.py exists
 
 load_dotenv()
 
 app = Flask(__name__)
 
-# Gemini API setup
+# ✅ Gemini model config with correct full model path
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-model = genai.GenerativeModel("gemini-pro")
+model = genai.GenerativeModel(model_name="models/gemini-pro")
 
-# RapidAPI setup for job suggestions
+# ✅ RapidAPI config
 RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
 RAPIDAPI_HOST = os.getenv("RAPIDAPI_HOST")
 
-# HuggingFace resume scoring setup
+# ✅ HuggingFace config
 HF_API_KEY = os.getenv("HF_API_KEY")
 HF_API_URL = "https://api-inference.huggingface.co/models/ehartford/writer"
 

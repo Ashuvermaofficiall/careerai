@@ -1,6 +1,6 @@
 Flask
 python-dotenv
-google-generativeai
+google-generativeai>=1.0.0
 requests
 gTTS
 PyMuPDF

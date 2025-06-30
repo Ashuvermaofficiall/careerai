@@ -3,19 +3,23 @@ from flask import Flask, request, jsonify, render_template
 from dotenv import load_dotenv
 import google.generativeai as genai
 import requests
-from resume_parser import parse_resume  # Make sure resume_parser.py exists
+from resume_parser import parse_resume
 from gtts import gTTS
 
+# Load environment variables
 load_dotenv()
 
+# API keys
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
 RAPIDAPI_HOST = os.getenv("RAPIDAPI_HOST")
 HF_API_KEY = os.getenv("HF_API_KEY")
 
-app = Flask(__name__)
+# Configure Gemini
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("models/gemini-pro")
+model = genai.GenerativeModel("gemini-pro")  # ✅ Correct model name
+
+app = Flask(__name__)
 
 @app.route("/")
 def home():
@@ -27,7 +31,6 @@ def ask():
         question = request.json.get("question")
         if not question:
             return jsonify({"error": "Please enter a valid question"}), 400
-
         response = model.generate_content(question)
         return jsonify({"response": response.text})
     except Exception as e:
@@ -39,7 +42,6 @@ def speak():
     text = data.get("text", "")
     if not text:
         return jsonify({"error": "No text provided"}), 400
-
     tts = gTTS(text)
     tts.save("static/voice.mp3")
     return jsonify({"url": "/static/voice.mp3"})
@@ -68,13 +70,10 @@ def job_suggestions():
 def resume_score():
     if "resume" not in request.files:
         return jsonify({"error": "No resume uploaded"}), 400
-
     resume_file = request.files["resume"]
     text = parse_resume(resume_file)
-
     prompt = f"Evaluate the following resume content and give a score out of 10:\n\n{text}"
     response = model.generate_content(prompt)
-
     return jsonify({"score": response.text})
 
 if __name__ == "__main__":

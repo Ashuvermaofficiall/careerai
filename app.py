@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 import google.generativeai as genai
 import requests
 
-from resume_parser import parse_resume  # Make sure resume_parser.py exists
+from resume_parser import parse_resume  # resume_parser.py must exist
 
 load_dotenv()
 
@@ -30,9 +30,12 @@ def home():
 
 @app.route('/ask', methods=['POST'])
 def ask():
-    question = request.form.get('question')
+    data = request.get_json()
+    question = data.get('question') if data else None
+
     if not question:
         return jsonify({'response': 'Please enter a valid question.'})
+
     try:
         response = model.generate_content(question)
         return jsonify({'response': response.text})
@@ -42,10 +45,12 @@ def ask():
 
 @app.route('/job-suggestions', methods=['POST'])
 def job_suggestions():
-    query = request.form.get('query')
+    data = request.get_json()
+    query = data.get('query') if data else None
+
     if not query:
         return jsonify({'error': 'Empty query'})
-    
+
     url = "https://jsearch.p.rapidapi.com/search"
     params = {"query": query, "num_pages": "1"}
     headers = {
@@ -75,7 +80,7 @@ def score_resume():
     file = request.files.get('resume')
     if not file:
         return jsonify({'error': 'No file uploaded'})
-    
+
     text = parse_resume(file)
     if not text:
         return jsonify({'error': 'Could not parse resume'})
